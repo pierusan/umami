@@ -13,11 +13,17 @@ interface SessionFilter {
   city?: string;
 }
 
+interface SessionResult extends Omit<Session, 'subdivision1'> {
+  region: string;
+  pageViews: number;
+  latestEventAt: Date;
+}
+
 export interface SessionSearchFilter extends Omit<SearchFilter, 'query'>, SessionFilter {}
 
 export async function getSessionsByWebsiteId(
   filters?: SessionSearchFilter,
-): Promise<FilterResult<Session>> {
+): Promise<FilterResult<SessionResult>> {
   const { websiteId, os, browser, device, country, language, region, city, ...rest } =
     filters || {};
 
@@ -38,10 +44,25 @@ export async function getSessionsByWebsiteId(
 
   const sessions = await prisma.client.session.findMany({
     where,
+    include: {
+      _count: {
+        select: {
+          websiteEvent: { where: { eventType: 1 } },
+        },
+      },
+      websiteEvent: { take: 1, orderBy: { createdAt: 'desc' }, select: { createdAt: true } },
+    },
     ...pageFilters,
   });
 
+  const sessionsRenamed = sessions.map(({ _count, websiteEvent, subdivision1, ...rest }) => ({
+    ...rest,
+    latestEventAt: websiteEvent?.[0]?.createdAt,
+    pageViews: _count.websiteEvent,
+    region: subdivision1,
+  }));
+
   const count = await prisma.client.session.count({ where });
 
-  return { data: sessions, count, ...getParameters };
+  return { data: sessionsRenamed, count, ...getParameters };
 }
