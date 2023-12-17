@@ -49,7 +49,7 @@ export interface SearchFilter {
   page?: number;
   pageSize?: number;
   orderBy?: string;
-  sortDescending?: boolean;
+  sortDescending?: 'true' | 'false';
 }
 
 export interface FilterResult<T> {
