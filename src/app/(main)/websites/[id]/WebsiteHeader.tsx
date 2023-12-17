@@ -36,6 +36,11 @@ export function WebsiteHeader({
       path: '/realtime',
     },
     {
+      label: formatMessage(labels.sessions),
+      icon: <Icons.Dashboard />,
+      path: '/sessions',
+    },
+    {
       label: formatMessage(labels.reports),
       icon: <Icons.Reports />,
       path: '/reports',
