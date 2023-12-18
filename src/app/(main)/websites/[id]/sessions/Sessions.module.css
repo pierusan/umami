@@ -1,0 +1,36 @@
+.selectorRow {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--base50);
+  z-index: var(--z-index-above);
+  min-height: 120px;
+  padding-bottom: 20px;
+}
+
+.filterPopup {
+  right: 0;
+}
+
+.subtle {
+  color: var(--base200);
+}
+
+@media screen and (max-width: 1200px) {
+  .container {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media screen and (min-width: 992px) {
+  .sticky {
+    position: sticky;
+    top: -1px;
+  }
+
+  .isSticky {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--base300);
+  }
+}

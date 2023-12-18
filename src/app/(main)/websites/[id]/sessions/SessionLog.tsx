@@ -1,81 +1,58 @@
-import { useMemo, useState } from 'react';
+import { ReactComponentElement, useMemo, useState } from 'react';
 import { StatusLight, Icon, Text, SearchField } from 'react-basics';
-import { FixedSizeList } from 'react-window';
-import { format } from 'date-fns';
-import thenby from 'thenby';
 import { safeDecodeURI } from 'next-basics';
 import FilterButtons from 'components/common/FilterButtons';
 import Empty from 'components/common/Empty';
-import useLocale from 'components/hooks/useLocale';
-import useCountryNames from 'components/hooks/useCountryNames';
 import Icons from 'components/icons';
 import useMessages from 'components/hooks/useMessages';
-import useFormat from 'components//hooks/useFormat';
-import { BROWSERS } from 'lib/constants';
-import { stringToColor } from 'lib/format';
 import styles from './SessionsLog.module.css';
+import stylesSession from './Sessions.module.css';
+import { FilterResult, SearchFilter } from 'lib/types';
+import { EventData, WebsiteEvent } from '@prisma/client';
+import Pager from 'components/common/Pager';
 
-const TYPE_ALL = 'all';
-const TYPE_PAGEVIEW = 'pageview';
-const TYPE_SESSION = 'session';
-const TYPE_EVENT = 'event';
+type EventType = 'all' | 'pageview' | 'event';
 
-const icons = {
-  [TYPE_PAGEVIEW]: <Icons.Eye />,
-  [TYPE_SESSION]: <Icons.Visitor />,
-  [TYPE_EVENT]: <Icons.Bolt />,
+const typeNumber = (type: EventType) => {
+  switch (type) {
+    case 'all':
+      return 0;
+    case 'pageview':
+      return 1;
+    case 'event':
+      return 2;
+    default: {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const _exhaustiveCheck: never = type;
+    }
+  }
 };
 
-export function RealtimeLog({ data, websiteDomain }) {
-  const [search, setSearch] = useState('');
+const icons: Partial<Record<EventType, ReactComponentElement<typeof Icons.Eye>>> = {
+  pageview: <Icons.Eye />,
+  event: <Icons.Bolt />,
+};
+
+type EventInfo = Omit<WebsiteEvent, 'id' | 'websiteId' | 'sessionId'> & {
+  eventData: Omit<EventData, 'id' | 'websiteId' | 'websiteEventId'>[];
+};
+
+function SessionLogText({ event, websiteDomain }: { event: EventInfo; websiteDomain: string }) {
   const { formatMessage, labels, messages, FormattedMessage } = useMessages();
-  const { formatValue } = useFormat();
-  const { locale } = useLocale();
-  const countryNames = useCountryNames(locale);
-  const [filter, setFilter] = useState(TYPE_ALL);
+  const { eventType, eventName, eventData, urlPath: url, referrerPath } = event;
 
-  const buttons = [
-    {
-      label: formatMessage(labels.all),
-      key: TYPE_ALL,
-    },
-    {
-      label: formatMessage(labels.views),
-      key: TYPE_PAGEVIEW,
-    },
-    {
-      label: formatMessage(labels.visitors),
-      key: TYPE_SESSION,
-    },
-    {
-      label: formatMessage(labels.events),
-      key: TYPE_EVENT,
-    },
-  ];
-
-  const getTime = ({ timestamp }) => format(timestamp, 'h:mm:ss');
-
-  const getColor = ({ id, sessionId }) => stringToColor(sessionId || id);
-
-  const getIcon = ({ __type }) => icons[__type];
-
-  const getDetail = (log: {
-    __type: any;
-    eventName: any;
-    urlPath: any;
-    browser: any;
-    os: any;
-    country: any;
-    device: any;
-  }) => {
-    const { __type, eventName, urlPath: url, browser, os, country, device } = log;
-
-    if (__type === TYPE_EVENT) {
+  switch (eventType) {
+    case 2: {
       return (
         <FormattedMessage
           {...messages.eventLog}
           values={{
-            event: <b>{eventName || formatMessage(labels.unknown)}</b>,
+            event: (
+              <b>
+                {eventName || formatMessage(labels.unknown)}{' '}
+                {eventData.length > 0 ? eventData.map(data => data.stringValue).join(' ') : ''}
+              </b>
+            ),
             url: (
               <a
                 href={`//${websiteDomain}${url}`}
@@ -90,69 +67,115 @@ export function RealtimeLog({ data, websiteDomain }) {
         />
       );
     }
-
-    if (__type === TYPE_PAGEVIEW) {
+    case 1:
+    default: {
       return (
-        <a
-          href={`//${websiteDomain}${url}`}
-          className={styles.link}
-          target="_blank"
-          rel="noreferrer noopener"
-        >
-          {safeDecodeURI(url)}
-        </a>
+        <>
+          <a
+            href={`//${websiteDomain}${url}`}
+            className={styles.link}
+            target="_blank"
+            rel="noreferrer noopener"
+          >
+            {safeDecodeURI(url)}
+          </a>
+          {referrerPath && <span className={stylesSession.subtle}> &lt;-- {referrerPath}</span>}
+        </>
       );
     }
+  }
+}
 
-    if (__type === TYPE_SESSION) {
-      return (
-        <FormattedMessage
-          {...messages.visitorLog}
-          values={{
-            country: <b>{countryNames[country] || formatMessage(labels.unknown)}</b>,
-            browser: <b>{BROWSERS[browser]}</b>,
-            os: <b>{os}</b>,
-            device: <b>{formatMessage(labels[device] || labels.unknown)}</b>,
-          }}
-        />
-      );
+function SessionLogRow({ event, websiteDomain }: { event: EventInfo; websiteDomain: string }) {
+  const { createdAt, eventType } = event;
+
+  let color = 'rgba(230, 95, 74, 0.837)';
+  let eventTypeName: EventType;
+  switch (eventType) {
+    case 1: {
+      color = '#204c89';
+      eventTypeName = 'pageview';
+      break;
     }
-  };
+    case 2: {
+      color = '#bc5ace';
+      eventTypeName = 'event';
+      break;
+    }
+  }
 
-  const Row = ({ index, style }) => {
-    const row = logs[index];
-    return (
-      <div className={styles.row} style={style}>
-        <div>
-          <StatusLight color={getColor(row)} />
-        </div>
-        <div className={styles.time}>{getTime(row)}</div>
-        <div className={styles.detail}>
-          <Icon className={styles.icon}>{getIcon(row)}</Icon>
-          <Text>{getDetail(row)}</Text>
-        </div>
+  return (
+    <div
+      className={styles.row}
+      // style={style}
+    >
+      <div>
+        <StatusLight color={color} />
       </div>
-    );
-  };
+      <div className={styles.time}>
+        {new Date(createdAt).toLocaleString('en-US', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false,
+        })}
+      </div>
+      <div className={styles.detail}>
+        <Icon className={styles.icon}>{icons[eventTypeName]}</Icon>
+        <Text>
+          <SessionLogText event={event} websiteDomain={websiteDomain} />
+        </Text>
+      </div>
+    </div>
+  );
+}
+
+export function SessionLog({
+  events: eventsArray,
+  websiteDomain = '',
+  allowPaging = true,
+}: {
+  events: FilterResult<EventInfo>;
+  websiteDomain?: string;
+  allowPaging?: boolean;
+}) {
+  const [params, setParams] = useState<EventInfo | SearchFilter>({
+    page: 1,
+  });
+  const { page, pageSize, count, data: events } = eventsArray || {};
+
+  const [search, setSearch] = useState('');
+  const { formatMessage, labels } = useMessages();
+  const [filter, setFilter] = useState<EventType>('all');
+
+  const buttons: { label: string; key: EventType }[] = [
+    {
+      label: formatMessage(labels.all),
+      key: 'all',
+    },
+    {
+      label: formatMessage(labels.views),
+      key: 'pageview',
+    },
+    {
+      label: formatMessage(labels.events),
+      key: 'event',
+    },
+  ];
 
   const logs = useMemo(() => {
-    if (!data) {
+    if (!events) {
       return [];
     }
 
-    const { pageviews, visitors, events } = data;
-    let logs = [...pageviews, ...visitors, ...events].sort(thenby.firstBy('createdAt', -1));
+    let logs = events;
 
     if (search) {
-      logs = logs.filter(({ eventName, urlPath, browser, os, country, device }) => {
-        return [
-          eventName,
-          urlPath,
-          os,
-          formatValue(browser, 'browser'),
-          formatValue(country, 'country'),
-          formatValue(device, 'device'),
-        ]
+      logs = logs.filter(({ eventName, urlPath }) => {
+        return [eventName, urlPath]
           .filter(n => n)
           .map(n => n.toLowerCase())
           .join('')
@@ -160,12 +183,16 @@ export function RealtimeLog({ data, websiteDomain }) {
       });
     }
 
-    if (filter !== TYPE_ALL) {
-      return logs.filter(({ __type }) => __type === filter);
+    if (filter !== 'all') {
+      return logs.filter(({ eventType }) => eventType === typeNumber(filter));
     }
 
     return logs;
-  }, [data, filter, formatValue, search]);
+  }, [events, filter, search]);
+
+  const handlePageChange = (page: number) => {
+    setParams({ ...params, page });
+  };
 
   return (
     <div className={styles.table}>
@@ -173,17 +200,32 @@ export function RealtimeLog({ data, websiteDomain }) {
         <SearchField className={styles.search} value={search} onSearch={setSearch} />
         <FilterButtons items={buttons} selectedKey={filter} onSelect={setFilter} />
       </div>
-      <div className={styles.header}>{formatMessage(labels.activityLog)}</div>
+      {/* TODO: Organize headers by date */}
+      {/* <div className={styles.header}>{formatMessage(labels.activityLog)}</div> */}
       <div className={styles.body}>
         {logs?.length === 0 && <Empty />}
-        {logs?.length > 0 && (
-          <FixedSizeList width="100%" height={3000} itemCount={logs.length} itemSize={50}>
-            {Row}
-          </FixedSizeList>
-        )}
+        {logs?.length > 0 &&
+          // <FixedSizeList width="100%" height={3000} itemCount={logs.length} itemSize={50}>
+          // </FixedSizeList>
+          logs.map(event => (
+            <SessionLogRow
+              key={event.createdAt.toString()}
+              event={event}
+              websiteDomain={websiteDomain}
+            />
+          ))}
       </div>
+      {allowPaging && events.length > 0 && (
+        <Pager
+          className={styles.pager}
+          page={page}
+          pageSize={pageSize}
+          count={count}
+          onPageChange={handlePageChange}
+        />
+      )}
     </div>
   );
 }
 
-export default RealtimeLog;
+export default SessionLog;

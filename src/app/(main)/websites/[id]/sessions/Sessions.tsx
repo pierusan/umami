@@ -1,103 +1,73 @@
 'use client';
-import { useMemo, useState, useEffect } from 'react';
-import { subMinutes, startOfMinute } from 'date-fns';
-import thenby from 'thenby';
 import { Grid, GridRow } from 'components/layout/Grid';
 import Page from 'components/layout/Page';
-import useApi from 'components/hooks/useApi';
-import { useWebsite } from 'components/hooks';
-import { percentFilter } from 'lib/filters';
-import { REALTIME_RANGE, REALTIME_INTERVAL } from 'lib/constants';
-import { RealtimeData } from 'lib/types';
+import { useApi, useNavigation, useWebsite } from 'components/hooks';
 import SessionLog from './SessionLog';
 import WebsiteHeader from '../WebsiteHeader';
+import { SessionSelector } from './SessionSelector';
+import { usePathname } from 'next/navigation';
+import FilterTags from 'components/metrics/FilterTags';
+import { useQuery } from '@tanstack/react-query';
+import { EventStats, type ExtendedSession } from 'queries/analytics/sessions/getSessionsForPierre';
+import { Loading } from 'react-basics';
+import ErrorMessage from 'components/common/ErrorMessage';
+import { SessionInfo } from './SessionInfo';
+import { FilterResult } from 'lib/types';
+import { EventData, WebsiteEvent } from '@prisma/client';
 
-function mergeData(state = [], data = [], time: number) {
-  const ids = state.map(({ id }) => id);
-  return state
-    .concat(data.filter(({ id }) => !ids.includes(id)))
-    .filter(({ timestamp }) => timestamp >= time);
-}
+export function Sessions({ websiteId }) {
+  const { data: website, isLoading: websiteIsLoading, error: websiteError } = useWebsite(websiteId);
+  const pathname = usePathname();
+  const showLinks = !pathname.includes('/share/');
 
-export function Realtime({ websiteId }) {
-  const [currentData, setCurrentData] = useState<RealtimeData>();
-  const { get, useQuery } = useApi();
-  const { data: website } = useWebsite(websiteId);
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['realtime', websiteId],
-    queryFn: () => get(`/realtime/${websiteId}`, { startAt: currentData?.timestamp || 0 }),
-    enabled: !!(websiteId && website),
-    refetchInterval: REALTIME_INTERVAL,
+  const {
+    query: { os, browser, device, country, region, city, hostname, sessionId },
+  } = useNavigation();
+
+  const { get } = useApi();
+  const {
+    data: sessionInfoAndEvents,
+    isLoading: isSessionLoading,
+    error: sessionError,
+  } = useQuery({
+    queryKey: ['session-info-and-events', sessionId],
+    queryFn: (): Promise<{
+      info: ExtendedSession;
+      eventStats: EventStats;
+      allEventStats: EventStats;
+      events: FilterResult<
+        Omit<WebsiteEvent, 'id' | 'websiteId' | 'sessionId'> & {
+          eventData: Omit<EventData, 'id' | 'websiteId' | 'websiteEventId'>[];
+        }
+      >;
+    }> => get(`/sessions-for-pierre/${sessionId}`),
+    enabled: Boolean(sessionId),
+    refetchInterval: 10_000, // refetch every 10 seconds
   });
 
-  useEffect(() => {
-    if (data) {
-      const date = subMinutes(startOfMinute(new Date()), REALTIME_RANGE);
-      const time = date.getTime();
-      const { pageviews, sessions, events, timestamp } = data;
-
-      setCurrentData(state => ({
-        pageviews: mergeData(state?.pageviews, pageviews, time),
-        sessions: mergeData(state?.sessions, sessions, time),
-        events: mergeData(state?.events, events, time),
-        timestamp,
-      }));
-    }
-  }, [data]);
-
-  const realtimeData: RealtimeData = useMemo(() => {
-    if (!currentData) {
-      return { pageviews: [], sessions: [], events: [], countries: [], visitors: [], timestamp: 0 };
-    }
-
-    currentData.countries = percentFilter(
-      currentData.sessions
-        .reduce((arr, data) => {
-          if (!arr.find(({ id }) => id === data.id)) {
-            return arr.concat(data);
-          }
-          return arr;
-        }, [])
-        .reduce((arr: { x: any; y: number }[], { country }: any) => {
-          if (country) {
-            const row = arr.find(({ x }) => x === country);
-
-            if (!row) {
-              arr.push({ x: country, y: 1 });
-            } else {
-              row.y += 1;
-            }
-          }
-          return arr;
-        }, [])
-        .sort(thenby.firstBy('y', -1)),
-    );
-
-    currentData.visitors = currentData.sessions.reduce((arr, val) => {
-      if (!arr.find(({ id }) => id === val.id)) {
-        return arr.concat(val);
-      }
-      return arr;
-    }, []);
-
-    return currentData;
-  }, [currentData]);
-
-  if (isLoading || error) {
-    return <Page isLoading={isLoading} error={error} />;
+  if (websiteIsLoading || websiteError) {
+    return <Page isLoading={websiteIsLoading} error={websiteError} />;
   }
+
+  const { info, eventStats, allEventStats, events } = sessionInfoAndEvents ?? {};
 
   return (
     <>
-      <WebsiteHeader websiteId={websiteId} />
-      <Grid>
-        <GridRow columns="one-two">
-          <div></div>
-          <SessionLog websiteDomain={website?.domain} data={realtimeData} />
-        </GridRow>
-      </Grid>
+      <WebsiteHeader websiteId={websiteId} showLinks={showLinks} />
+      <FilterTags params={{ os, browser, device, country, region, city, hostname }} />
+      <SessionSelector websiteId={websiteId} sticky={true} />
+      {isSessionLoading && <Loading position="center" icon="dots" />}
+      {sessionError && <ErrorMessage />}
+      {sessionId && !isSessionLoading && !sessionError && (
+        <Grid>
+          <GridRow columns="one-two">
+            <SessionInfo info={info} eventStats={eventStats} allEventStats={allEventStats} />
+            <SessionLog websiteDomain={website?.domain} events={events} />
+          </GridRow>
+        </Grid>
+      )}
     </>
   );
 }
 
-export default Realtime;
+export default Sessions;

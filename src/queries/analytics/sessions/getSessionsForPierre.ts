@@ -13,7 +13,7 @@ interface SessionFilter {
   city?: string;
 }
 
-interface ExtendedSession extends Omit<Session, 'subdivision1'> {
+export interface ExtendedSession extends Omit<Session, 'subdivision1'> {
   region: string;
   pageViews: number;
   latestEventAt: Date;
@@ -100,8 +100,8 @@ async function getSessionInfo(sessionId: string): Promise<ExtendedSession> {
   return renameExtendedSession(session);
 }
 
-type EventStats = {
-  eventNames: ({ _count: number } & Pick<WebsiteEvent, 'eventName' | 'eventType'>)[];
+export type EventStats = {
+  eventNames: ({ _count: number } & Pick<WebsiteEvent, 'eventName' | 'eventType' | 'urlPath'>)[];
   eventData: ({ _count: number } & Pick<
     EventData,
     'eventKey' | 'stringValue' | 'dataType' | 'numberValue' | 'dateValue'
@@ -150,11 +150,38 @@ async function getSessionEvents(
         },
         ...pageFilters,
       }),
-      prisma.client.websiteEvent.groupBy({
-        where,
-        by: ['eventName', 'eventType'],
-        _count: true,
-      }),
+      prisma.client.websiteEvent
+        .groupBy({
+          where,
+          by: ['eventType', 'urlPath', 'eventName'],
+          _count: true,
+        })
+        .then(groups =>
+          groups.reduce((acc, group) => {
+            // The page event are already discriminated
+            if (group.eventType == 1) {
+              acc.push(group);
+              return acc;
+            }
+
+            // When "Event", we merge the urlPath together
+            const existingGroupIndex = acc.findIndex(
+              existingGroup =>
+                group.eventType === existingGroup.eventType &&
+                group.eventName === existingGroup.eventName,
+            );
+            if (existingGroupIndex === -1) {
+              acc.push({ ...group, urlPath: null });
+              return acc;
+            } else {
+              acc[existingGroupIndex] = {
+                ...acc[existingGroupIndex],
+                _count: acc[existingGroupIndex]._count + group._count,
+              };
+            }
+            return acc;
+          }, []),
+        ),
       prisma.client.eventData.groupBy({
         where: { websiteEvent: { sessionId } },
         by: ['eventKey', 'stringValue', 'dataType', 'numberValue', 'dateValue'],
@@ -162,10 +189,37 @@ async function getSessionEvents(
       }),
       // Add stats about all the events to compare this session with others and
       // to know what has and hasn't been clicked on.
-      prisma.client.websiteEvent.groupBy({
-        by: ['eventName', 'eventType'],
-        _count: true,
-      }),
+      prisma.client.websiteEvent
+        .groupBy({
+          by: ['eventName', 'eventType', 'urlPath'],
+          _count: true,
+        })
+        .then(groups =>
+          groups.reduce((acc, group) => {
+            // The page event are already discriminated
+            if (group.eventType == 1) {
+              acc.push(group);
+              return acc;
+            }
+
+            // When "Event", we merge the urlPath together
+            const existingGroupIndex = acc.findIndex(
+              existingGroup =>
+                group.eventType === existingGroup.eventType &&
+                group.eventName === existingGroup.eventName,
+            );
+            if (existingGroupIndex === -1) {
+              acc.push({ ...group, urlPath: null });
+              return acc;
+            } else {
+              acc[existingGroupIndex] = {
+                ...acc[existingGroupIndex],
+                _count: acc[existingGroupIndex]._count + group._count,
+              };
+            }
+            return acc;
+          }, []),
+        ),
       prisma.client.eventData.groupBy({
         by: ['eventKey', 'stringValue', 'dataType', 'numberValue', 'dateValue'],
         _count: true,
