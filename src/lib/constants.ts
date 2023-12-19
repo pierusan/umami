@@ -42,6 +42,7 @@ export const SESSION_COLUMNS = [
   'country',
   'region',
   'city',
+  'hostname',
 ];
 
 export const FILTER_COLUMNS = {
@@ -57,6 +58,7 @@ export const FILTER_COLUMNS = {
   city: 'city',
   language: 'language',
   event: 'event_name',
+  hostname: 'hostname',
 };
 
 export const COLLECTION_TYPE = {

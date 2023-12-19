@@ -197,6 +197,7 @@ export const labels = defineMessages({
     id: 'label.number-of-records',
     defaultMessage: '{x} {x, plural, one {record} other {records}}',
   },
+  hostname: { id: 'label.hostname', defaultMessage: 'Hostname' },
 });
 
 export const messages = defineMessages({

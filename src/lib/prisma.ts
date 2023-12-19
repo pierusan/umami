@@ -187,9 +187,16 @@ function getPageFilters(filters: SearchFilter): [
     pageSize: number;
     page: number;
     orderBy: string;
+    sortDescending: boolean;
   },
 ] {
-  const { page = 1, pageSize = DEFAULT_PAGE_SIZE, orderBy, sortDescending = false } = filters || {};
+  const {
+    page = 1,
+    pageSize = DEFAULT_PAGE_SIZE,
+    orderBy,
+    sortDescending: sortDescendingString = 'false',
+  } = filters || {};
+  const sortDescending = sortDescendingString === 'true' ? true : false;
 
   return [
     {
@@ -202,7 +209,7 @@ function getPageFilters(filters: SearchFilter): [
         ],
       }),
     },
-    { page: +page, pageSize, orderBy },
+    { page: +page, pageSize, orderBy, sortDescending },
   ];
 }
 

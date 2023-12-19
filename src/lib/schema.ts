@@ -10,4 +10,5 @@ export const pageInfo = {
   page: yup.number().integer().positive(),
   pageSize: yup.number().integer().positive().min(1).max(200),
   orderBy: yup.string(),
+  sortDescending: yup.boolean(),
 };
